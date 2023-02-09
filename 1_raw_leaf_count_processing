@@ -1,0 +1,86 @@
+rm(list=ls())
+getwd()
+setwd("D:/Innsbruck/Drought legacies/R")
+
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(ggthemes)
+library(RColorBrewer)
+
+#Read in data
+data <- read_excel("Counts_raw data.xlsx", na = "NA",
+                   col_type = c(rep("guess", 6), rep("numeric", 60)))
+
+#Create vector with dates of the drought and vector of harvest
+harvest <- ymd("2020-08-05")
+drought <- ymd(c("2020-06-17", "2020-07-31"))
+
+#rename "Code" to "Plot"
+names(data)[2] <- "Plot"
+
+#change data to ymd (without time)
+data$Date <- ymd(data$Date)
+
+#Sum counts of various columns
+#Sum unknown grass and unknown_grass
+data <- data %>%
+  mutate(unknown_grasses = ifelse(is.na(`unknown grass`) & is.na(unknown_grass) & is.na(unknown_smoothgrass) 
+                                  & is.na(`Arrhenatherum elatius`) & is.na(`Hairy carex (A. elatius)`) & is.na(`Festuca pratensis`), NA,
+                           rowSums(cbind(`unknown grass`, unknown_grass, unknown_smoothgrass,
+                                         `Arrhenatherum elatius`, `Hairy carex (A. elatius)`, `Festuca pratensis`), na.rm = TRUE)))
+
+#Delete the old columns
+data <- subset(data, select = -c(unknown_grass,`unknown grass`, unknown_smoothgrass, 
+                                 `Arrhenatherum elatius`, `Hairy carex (A. elatius)`, `Festuca pratensis`))
+
+#Sum round leaves Phyteum, Phyteum betonificolia, Phyteum orbiculare into Phyteum_sp
+data <- data %>% 
+  mutate(Phyteum_sp = ifelse(is.na(`Phyteum betonicifolia`) & is.na(`round_leaves_Phyteum?`) & is.na(`Phyteum orbiculare`), NA,
+                                         rowSums(cbind(`Phyteum betonicifolia`, `round_leaves_Phyteum?`, `Phyteum orbiculare`),na.rm = TRUE)))
+
+#delete old columns
+data <- subset(data, select = -c(`Phyteum betonicifolia`,`round_leaves_Phyteum?`, `Phyteum orbiculare`))
+
+#Sum Vicia species
+data <- data %>% 
+  mutate(Vicia_sp = ifelse(is.na(`Vicia cracca`) & is.na(`Vicia sepium`), NA,
+                           rowSums(cbind(`Vicia cracca`, `Vicia sepium`), na.rm=TRUE)))
+#Delete old columns
+data <- subset(data, select = -c(`Vicia cracca`, `Vicia sepium`))
+
+#Sum unknown_verbascum, unknown_Prunella, unknown forb, Acinos and Cerastium
+data <- data %>% 
+  mutate(unknown_forb = ifelse(is.na(`unknown herb`) & is.na(`unknown_Verbascum thapsus?`) & is.na(`unknown_Prunella?`)
+                               & is.na(`Acinos alpinus`) & is.na(`Cerastium fontanum`), NA,
+                               rowSums(cbind(`unknown herb`, `unknown_Verbascum thapsus?`, `unknown_Prunella?`,
+                                             `Acinos alpinus`, `Cerastium fontanum`), na.rm = TRUE)))
+#Delete old columns
+data <- subset(data, select = -c(`unknown_Verbascum thapsus?`,`unknown herb`, `unknown_Prunella?`, `Acinos alpinus`, `Cerastium fontanum`))
+
+#Delete columns with only NAs:
+#Helianthemum nummularium, Colchicum autumnale, Dactylorhiza maculate, Ranunculus nemorosus
+data <- data %>% 
+  select(-c(`Helianthemum nummularium`,`Colchicum autumnale`,
+            `Dactylorhiza maculate`,`Ranunculus nemorosus`))
+
+#Combine dates for which several days were needed to count forbs and grasses
+#Take average of these dates to have one counting point
+names(data)[6] <- "Date_real"
+
+#18.05, 20.05, 25.05, 27.05
+#-> 22.05 for all these four dates
+data <- data %>% 
+  mutate(Date = if_else(Date_real <= ymd("2020-05-27"), ymd("2020-05-22"),Date_real))
+
+#12.7, 14.7 und 20.7 kÃ¶nnen einfach zum 16.7 werden
+#(idealerweise 14 und 20 fÃ¼r herbs zusamennehmen und 12 und 14 fÃ¼r grasses)
+data <- data %>% 
+  mutate(Date = if_else(Date >= ymd("2020-07-12")& Date <= ymd("2020-07-20"),
+                        ymd("2020-07-16"),Date))
+
+#write an output for  data 
+write.csv(data, file ="Counting_data_processed.csv")
+
+#Write as Rda
+save(data, file="Counting_data_processed.Rda")
