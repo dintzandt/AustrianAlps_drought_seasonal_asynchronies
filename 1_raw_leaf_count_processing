@@ -71,13 +71,12 @@ names(data)[6] <- "Date_real"
 #18.05, 20.05, 25.05, 27.05
 #-> 22.05 for all these four dates
 data <- data %>% 
-  mutate(Date = if_else(Date_real <= ymd("2020-05-27"), ymd("2020-05-22"),Date_real))
+  mutate(Date = if_else(Date_real <= ymd("2020-05-27"), ymd("2020-05-22"), Date_real))
 
 #12.7, 14.7 und 20.7 kÃ¶nnen einfach zum 16.7 werden
 #(idealerweise 14 und 20 fÃ¼r herbs zusamennehmen und 12 und 14 fÃ¼r grasses)
 data <- data %>% 
-  mutate(Date = if_else(Date >= ymd("2020-07-12")& Date <= ymd("2020-07-20"),
-                        ymd("2020-07-16"),Date))
+  mutate(Date = if_else(Date >= ymd("2020-07-12")& Date <= ymd("2020-07-20"), ymd("2020-07-16"),Date))
 
 #Make long data frame
 data_long <- data %>%
@@ -88,23 +87,16 @@ data_long$abbr <- paste(str_sub(str_split_fixed(data_long$Species, n=2, " ")[,1]
                         str_sub(str_split_fixed(data_long$Species, n=2, " ")[,2], 1, 3) , sep="_")
 
 #Sum the 4 sections of the plot (A, B, C, D)
-temp <- ddply(data_long, c("Author", "Plot", "Treatment", "Replicate", "Date_real", 
-                           "Date", "Species", "abbr"), summarise,
-              SCount = sum(Count, na.rm=T))
-temp
-temp$SCount[temp$SCount == 0] <- NA
-dim(data_long) / dim(temp) #4 for length = as it should be
-data_sum <- temp
-
-#View(data_long) 
-#MR1 only has NA entries at 18-05 and 20-05, therefore time point 1 will later be missing in this time series
-#MC2 only has NA for 25-05 and 27-05
+data_sum <- data_long %>%
+  group_by(Author, Plot, Treatment, Replicate, Date_real, Species, abbr) %>%
+  summarise(SCount = sum(Count, na.rm=T))
+data_sum
 
 #Add whether species belonged to forb or grass counting day
 #Carex and Crocus were counted on grass days
 #Legumes were counted on forb days
 levels(factor(data_sum$Species))
-data_sum$counting_group <- mapvalues(data_sum$Species, 
+data_sum$counting_group <- plyr::mapvalues(data_sum$Species, 
                                      from = levels(factor(data_sum$Species)), 
                                      to = c("F", "G", "F", "G", "F",
                                             "G", "F", "F", "G", "F",
@@ -117,45 +109,41 @@ data_sum$counting_group <- mapvalues(data_sum$Species,
                                             "F", "G", "F", "F"))
 
 #Determine whether Date_real was FG, G or F counting day
-tot_count_FG <- list()
+tot_count_FG <- data_sum %>%
+  group_by(Plot, Date_real, counting_group) %>%
+  summarise(tot_count_FG = sum(SCount, na.rm = T))
+tot_count_FG
+tot_count_FG_wide <- pivot_wider(tot_count_FG, id_cols = c("Plot", "Date_real"), names_from = counting_group, values_from = tot_count_FG)
 
-for (i in levels(factor(data_sum$Plot))) {
-  for (j in c("F", "G")) {
-    for (k in levels(factor(data_sum$Date_real))) {
-      sub <- data_sum[which(data_sum$Plot == i & data_sum$counting_group == j & data_sum$Date_real == k),]
-      tot_count_FG[[paste(i, j, k, sep = "_")]] <- sum(sub$SCount, na.rm=T)
-      
-    } 
-  }
-}
+View(tot_count_FG_wide)
 
-temp <- melt(tot_count_FG)
-colnames(temp) <- c("Totcount", "Plot_FG_Date_real")
-temp$Plot <- factor(str_split_fixed(temp$Plot_FG_Date_real, n=3, "_")[,1])
-temp$Date_real <- str_split_fixed(temp$Plot_FG_Date_real, n=3, "_")[,3]
-temp$FG <- str_split_fixed(temp$Plot_FG_Date_real, n=3, "_")[,2]
-temp$Plot_FG_Date_real <- NULL
-tot_count_FG <- pivot_wider(temp, id_cols = c("Plot", "Date_real"), names_from = FG, values_from = Totcount)
+#There are a few dates where there are a few grasses counted, but they should not have been, so somehow these are in the wrong category?
+View(data_sum)
 
 #If 0 counts, the specific group was not counted on the date
-#Sometimes the F and G groups are not completely accurate, so total counts per F or G groups is 1-9,
-#while it was not a counting day for all forbs or grass. So set to > 10 instead of 0
-tot_count_FG$day_of_count <- NA
-tot_count_FG$day_of_count[tot_count_FG$F > 10 & tot_count_FG$G > 10] <- "FG"
-tot_count_FG$day_of_count[tot_count_FG$F < 10 & tot_count_FG$G < 10] <- "nothing"
-tot_count_FG$day_of_count[tot_count_FG$F < 10 & tot_count_FG$G > 10] <- "G_only"
-tot_count_FG$day_of_count[tot_count_FG$F > 10 & tot_count_FG$G < 10] <- "F_only"
-#View(tot_count_FG) #good
+#But there are some cases where Crocus and Phleum were counted on an F day
+#So set to > 10 instead of 0
+tot_count_FG_wide$day_of_count <- NA
+tot_count_FG_wide$day_of_count[tot_count_FG_wide$F > 10 & tot_count_FG_wide$G > 10] <- "FG"
+tot_count_FG_wide$day_of_count[tot_count_FG_wide$F < 10 & tot_count_FG_wide$G < 10] <- "nothing"
+tot_count_FG_wide$day_of_count[tot_count_FG_wide$F < 10 & tot_count_FG_wide$G > 10] <- "G_only"
+tot_count_FG_wide$day_of_count[tot_count_FG_wide$F > 10 & tot_count_FG_wide$G < 10] <- "F_only"
+View(tot_count_FG_wide) #good
 
 #Merge to data_sum
-data_sum <- merge(data_sum, tot_count_FG, by = c("Plot", "Date_real"))
+data_sum <- merge(data_sum, tot_count_FG_wide, by = c("Plot", "Date_real"))
 head(data_sum)
 
-#Every SCount which is NA at a day of count in its own counting group is a true 0
-data_sum$SCount[which(data_sum$day_of_count == "FG" & is.na(data_sum$SCount))] <- 0
-data_sum$SCount[which(data_sum$day_of_count == "F_only" & is.na(data_sum$SCount) & data_sum$counting_group == "F")] <- 0
-data_sum$SCount[which(data_sum$day_of_count == "G_only" & is.na(data_sum$SCount) & data_sum$counting_group == "G")] <- 0
-#View(data_sum) #looks good
+#On days the plot was not counted, 0 counts should be NA
+data_sum$SCount[which(data_sum$day_of_count == "nothing" & data_sum$SCount == 0)] <- NA
+
+#On G counting days, F species should be NA
+data_sum$SCount[which(data_sum$day_of_count == "G_only" & data_sum$counting_group == "F" & data_sum$SCount == 0)] <- NA
+
+#On F counting days, G species should be NA
+data_sum$SCount[which(data_sum$day_of_count == "F_only" & data_sum$counting_group == "G" & data_sum$SCount == 0)] <- NA
+
+View(data_sum) #looks good
 
 #Make Date_real into counting time points per F and G
 F_date <- levels(factor(as.character(data_sum$Date_real[data_sum$day_of_count %in% c("FG", "F_only")]),))
@@ -164,7 +152,7 @@ G_date <- levels(factor(as.character(data_sum$Date_real[data_sum$day_of_count %i
 #Make time points for forb counting days
 F_date
 data_sum$time_point[data_sum$counting_group == "F" & data_sum$F > 20] <- 
-  revalue(as.character(data_sum$Date_real[data_sum$counting_group == "F" & data_sum$F > 20]), 
+  plyr::revalue(as.character(data_sum$Date_real[data_sum$counting_group == "F" & data_sum$F > 20]), 
           c("2020-05-18"="1", "2020-05-20"="1", "2020-05-27"="1",
             "2020-06-12"="2", "2020-06-24"="3", "2020-07-14"="4", "2020-07-20"="4",
             "2020-07-30"="5", "2020-08-12"="6", "2020-08-25"="7", "2020-09-09"="8",
@@ -173,13 +161,16 @@ data_sum$time_point[data_sum$counting_group == "F" & data_sum$F > 20] <-
 #Make time points for grass counting days
 G_date
 data_sum$time_point[data_sum$counting_group == "G" & data_sum$G > 20] <- 
-  revalue(as.character(data_sum$Date_real[data_sum$counting_group == "G" & data_sum$G > 20]), 
+  plyr::revalue(as.character(data_sum$Date_real[data_sum$counting_group == "G" & data_sum$G > 20]), 
           c("2020-05-18"="1", "2020-05-25"="1", "2020-05-27"="1",
-            #here we skipped one grass time point, so skip 2
+            #here we skipped one grass time point, so skip time point 2
             "2020-06-23"="3", "2020-07-12"="4", "2020-07-14"="4", 
             "2020-07-28"="5", "2020-08-12"="6", "2020-08-25"="7", "2020-09-09"="8",
             "2020-09-24"="9", "2020-10-22"="10"))
-#View(data_sum) #looks good
+View(data_sum) #looks good
+
+#Crocus and Phleum are, in some cases, missing their time point 2 count, because they were counted with the forbs that day
+#But not an issue now, all grasses miss a time point 2 due to covid restrictions
 
 #Save file
 save(data_sum, file="LeafCount_data_processed.Rda")
