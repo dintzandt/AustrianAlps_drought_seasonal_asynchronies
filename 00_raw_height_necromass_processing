@@ -1,0 +1,55 @@
+rm(list=ls())
+getwd()
+setwd("D:/Innsbruck/Drought legacies/R")
+
+#Load packages
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(reshape2)
+#library(plyr)
+library(lubridate)
+library(vegan)
+library(tidyverse)
+
+#Read data
+data_canopy <- read.table("Canopy_height_Necromass.txt", sep="\t",header=T)
+data_canopy$Plot[data_canopy$Plot == " MC4"] <- "MC4"
+
+#Check data
+head(data_canopy)
+data_canopy$Plot <- factor(data_canopy$Plot)
+data_canopy$Treatment <- factor(data_canopy$Treatment, levels = c("control", "1yr_drought", "3yrs_drought", "13yrs_drought"))
+data_canopy$Date <- dmy(data_canopy$Date)
+
+#Combine dates for which several days were needed to count forbs and grasses
+#Take average of these dates to have one counting point
+data_canopy$Date_real <- data_canopy$Date
+
+#18.05, 20.05, 25.05, 27.05
+#-> 22.05 for all these four dates
+data_canopy <- data_canopy %>% 
+  mutate(Date = if_else(Date_real <= ymd("2020-05-27"), ymd("2020-05-22"), Date_real))
+
+#12.7, 14.7 und 20.7 k????nnen einfach zum 16.7 werden
+#(idealerweise 14 und 20 f????r herbs zusamennehmen und 12 und 14 f????r grasses)
+data_canopy <- data_canopy %>% 
+  mutate(Date = if_else(Date >= ymd("2020-07-12") & Date <= ymd("2020-07-20"), ymd("2020-07-16"), Date_real))
+
+#Add time points
+data_canopy$time_point <- 
+  plyr::revalue(as.character(data_canopy$Date_real), c("2020-05-18"="1", "2020-05-20"="1", "2020-05-27"="1",
+                                                       "2020-06-12"="2", "2020-06-24"="3", "2020-07-14"="4", "2020-07-16"="4", "2020-07-20"="4",
+                                                       "2020-07-28"="5", "2020-07-30"="5", "2020-08-12"="6", "2020-08-25"="7", "2020-09-09"="8",
+                                                       "2020-09-24"="9", "2020-10-22"="10"))
+
+#Remove time point 2
+data_canopy_sub <- data_canopy[which(!data_canopy$time_point == "2"),]
+
+#Add date per time point in line with leaf counts
+data_canopy_sub$date<- ymd(plyr::revalue(data_canopy_sub$time_point, 
+                                          c("1"="2020-05-22", "3"="2020-06-23",
+                                            "4"="2020-07-16", "5"="2020-07-29", "6"="2020-08-12", "7"="2020-08-25",
+                                            "8"="2020-09-09", "9"="2020-09-24", "10"="2020-10-22")))
+
+save(data_canopy_sub, file = "data_canopy_processed.Rda")
