@@ -117,7 +117,7 @@ tot_count_FG_wide <- pivot_wider(tot_count_FG, id_cols = c("Plot", "Date_real"),
 
 View(tot_count_FG_wide)
 
-#There are a few dates where there are a few grasses counted, but they should not have been, so somehow these are in the wrong category?
+#There are a few dates where there are a few grasses counted, but they should not have been --> Crocus and Phleum were in some cases counted on an F day
 View(data_sum)
 
 #If 0 counts, the specific group was not counted on the date
@@ -143,7 +143,7 @@ data_sum$SCount[which(data_sum$day_of_count == "G_only" & data_sum$counting_grou
 #On F counting days, G species should be NA
 data_sum$SCount[which(data_sum$day_of_count == "F_only" & data_sum$counting_group == "G" & data_sum$SCount == 0)] <- NA
 
-View(data_sum) #looks good
+View(data_sum) #good
 
 #Make Date_real into counting time points per F and G
 F_date <- levels(factor(as.character(data_sum$Date_real[data_sum$day_of_count %in% c("FG", "F_only")]),))
@@ -170,7 +170,7 @@ data_sum$time_point[data_sum$counting_group == "G" & data_sum$G > 20] <-
 View(data_sum) #looks good
 
 #Crocus and Phleum are, in some cases, missing their time point 2 count, because they were counted with the forbs that day
-#But not an issue now, all grasses miss a time point 2 due to covid restrictions
+#But not an issue, because all grass species miss a time point 2 due to covid restrictions
 
 #Save file
 save(data_sum, file="LeafCount_data_processed.Rda")
