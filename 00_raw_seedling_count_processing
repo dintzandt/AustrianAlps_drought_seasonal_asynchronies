@@ -1,0 +1,51 @@
+rm(list=ls())
+getwd()
+setwd("D:/Innsbruck/Drought legacies/R")
+
+#Load packages
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(reshape2)
+#library(plyr)
+library(lubridate)
+library(vegan)
+library(tidyverse)
+
+#Read data
+data_seedlings <- read.table("seedling_counts_2020.txt", sep="\t",header=T)[,-c(7:9)]
+
+#Check data
+str(data_seedlings)
+data_seedlings$Plot <- factor(data_seedlings$Plot)
+data_seedlings$Date <- dmy(data_seedlings$Date)
+
+#Combine dates for which several days were needed to count forbs and grasses
+#Take average of these dates to have one counting point
+data_seedlings$Date_real <- data_seedlings$Date
+
+#18.05, 20.05, 25.05, 27.05
+#-> 22.05 for all these four dates
+data_seedlings <- data_seedlings %>% 
+  mutate(Date = if_else(Date_real <= ymd("2020-05-27"), ymd("2020-05-22"), Date_real))
+
+#12.7, 14.7 und 20.7 k????nnen einfach zum 16.7 werden
+#(idealerweise 14 und 20 f????r herbs zusamennehmen und 12 und 14 f????r grasses)
+data_seedlings <- data_seedlings %>% 
+  mutate(Date = if_else(Date >= ymd("2020-07-12") & Date <= ymd("2020-07-20"), ymd("2020-07-16"), Date_real))
+
+#Add time points
+data_seedlings$time_point <- 
+  plyr::revalue(as.character(data_seedlings$Date_real), c("2020-05-18"="1", "2020-05-20"="1", "2020-05-27"="1",
+                                                       "2020-06-12"="2", "2020-06-23"="3", "2020-07-14"="4", "2020-07-16"="4", "2020-07-20"="4",
+                                                       "2020-07-28"="5", "2020-07-30"="5", "2020-08-12"="6", "2020-08-25"="7", "2020-09-09"="8",
+                                                       "2020-09-24"="9", "2020-10-22"="10"))
+data_seedlings
+
+#Add date per time point in line with leaf counts
+data_seedlings$date<- ymd(plyr::revalue(data_seedlings$time_point, 
+                                          c("1"="2020-05-22", "3"="2020-06-23",
+                                            "4"="2020-07-16", "5"="2020-07-29", "6"="2020-08-12", "7"="2020-08-25",
+                                            "8"="2020-09-09", "9"="2020-09-24", "10"="2020-10-22")))
+
+save(data_seedlings, file = "data_seedlings_processed.Rda")
