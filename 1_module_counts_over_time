@@ -1,0 +1,302 @@
+rm(list=ls())
+getwd()
+setwd("D:/Innsbruck/Drought legacies/R")
+
+#Load packages
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(reshape2)
+#library(plyr)
+library(lubridate)
+library(vegan)
+library(tidyverse)
+library(car)
+library(lme4)
+library(nlme)
+
+#Read data
+load("LeafCount_data_processed.Rda")
+data_sum_leaf <- data_sum
+load("data_sum_flowers_merged.Rda")
+data_sum_flower <- data_sum
+
+#Sum flower and leaf counts
+head(data_sum_leaf)
+head(data_sum_flower)
+
+#Delete time_point = NA
+sub_leaf <- data_sum_leaf[which(!is.na(data_sum_leaf$time_point)),]
+
+data_sum <- merge(sub_leaf[,c(1,4,5, 7:8,13)], data_sum_flower[,c(1,5,6,8:9,11)], by = c("Plot", "Treatment", "Replicate", "abbr", "time_point"), all = T)
+colnames(data_sum)[c(6,7)] <- c("SCount_leaf", "SCount_flower")
+data_sum$SCount_flower[is.na(data_sum$SCount_flower)] <- 0
+
+#Calculate total modules
+data_sum$SCount_modules <- data_sum$SCount_leaf + data_sum$SCount_flower
+
+#Remove time point 2
+data_sum <- data_sum[which(!data_sum$time_point == 2),]
+
+#Check data
+head(data_sum)
+str(data_sum)
+
+#Remove NA's
+data_sum <- data_sum[complete.cases(data_sum),]
+
+#Order treatments
+data_sum$Treatment <- factor(data_sum$Treatment, levels = c("control", "drought_1yr", "drought_3yr", "drought_13yr"))
+data_sum$Drought_frequency <- plyr::revalue(data_sum$Treatment, c("control"="0 years", "drought_1yr"="1 year", 
+                                                                          "drought_3yr"="3 years", "drought_13yr"="13 years"))
+data_sum$Drought_frequency <- factor(data_sum$Drought_frequency, levels = c("0 years", "1 year", "3 years", "13 years"))
+
+#Add continious drought frequency variable
+data_sum$drought_yrs <- as.numeric(as.character(plyr::revalue(data_sum$Treatment, c("control" = "0", "drought_1yr" = "1", 
+                                                                                            "drought_3yr" = "3", "drought_13yr" = "13"))))
+
+#Save summed counts
+#save(data_sum, file = "data_sum.Rda")
+
+#Save coding
+head(data_sum)
+#coding <- unique(data_sum[,c(1:2,9,12,13:15)])
+#save(coding, file = "coding.RDa")
+
+#####B-1 Overall leaf count plots over time#####
+#color palette
+my_colours = colorRampPalette(c("darkblue","darkorange", "darkred", "black"))
+
+#Calculate
+detach(package:plyr)
+head(data_sum)
+data_sum_overall <- data_sum %>%
+  group_by(Plot, Drought_frequency, Replicate, time_point) %>%
+  summarise(tot_SCount_leaf = sum(SCount_leaf, na.rm = T),
+            tot_SCount_flower = sum(SCount_flower, na.rm = T),
+            tot_SCount_modules = sum(SCount_modules, na.rm = T))
+
+#Add date to time_point
+data_sum_overall$date <- ymd(plyr::revalue(data_sum_overall$time_point, 
+                             c("1"="2020-05-22", "3"="2020-06-23",
+                               "4"="2020-07-16", "5"="2020-07-29", "6"="2020-08-12", "7"="2020-08-25",
+                               "8"="2020-09-09", "9"="2020-09-24", "10"="2020-10-22")))
+
+#Add plant species
+sp_abbr <- unique(data_sum_leaf[,c(6:7)])
+data_sum <- merge(data_sum, sp_abbr, by = c("abbr"))
+
+#Add plant species functional group
+levels(as.factor(data_sum$Species))
+data_sum$functional_group <- as.factor(data_sum$Species)
+data_sum$functional_group <- plyr::revalue(data_sum$functional_group, c("Achillea millefolium" = "forb", "Agrostis capillaris" = "grass", 
+                                                                        "Alchemilla vulgaris" = "forb", "Anthoxanthum odoratum" = "grass",
+                                                                        "Anthyllis vulneraria" = "legume", "Briza media" = "grass", 
+                                                                        "Campanula scheuchzeri" = "forb", "Carduus nutans" = "forb",
+                                                                        "Carex sempervirens" = "sedge", "Carum carvi" = "forb", 
+                                                                        "Chaerophyllum hirsutum" = "forb", "Crepis pyrenaica" = "forb",
+                                                                        "Crocus albiflorus" = "forb", "Dactylis glomerata" = "grass", 
+                                                                        "Deschampsia cespitosa" = "grass", "Festuca rubra" = "grass",
+                                                                        "Galium pumilum" = "forb", "Geranium sylvaticum" = "forb", 
+                                                                        "Geum rivale" = "forb", "Helictotrichon pubescens" = "grass",
+                                                                        "Hypericum maculatum" = "forb", "Leontodon hispidus" = "forb", 
+                                                                        "Leucanthemum vulgare" = "forb", "Lotus corniculatus" = "legume",
+                                                                        "Phleum raeticum" = "grass", "Phyteum sp" = "forb", 
+                                                                        "Pimpinella major" = "forb", "Plantago lanceolata" = "forb",
+                                                                        "Potentilla erecta" = "forb", "Primula elatior" = "forb", 
+                                                                        "Ranunculus acris" = "forb", "Ranunculus montanus" = "forb",
+                                                                        "Rhinanthus glacialis" = "hemiparasite", "Rumex acetosa" = "forb", 
+                                                                        "Silene vulgaris" = "forb", "Soldanella alpina" = "forb",
+                                                                        "Taraxacum officinale" = "forb", "Trifolium pratense" = "legume", 
+                                                                        "Trifolium repens" = "legume", "Trisetum flavescens" = "grass",
+                                                                        "unknown forb" = "forb", "unknown grasses" = "grass", 
+                                                                        "Veronica chamaedrys" = "forb", "Vicia sp" = "legume"))
+
+head(data_sum)
+#save(data_sum, file = "data_sum_2.Rda")
+
+#Counts per functional group
+data_sum_func <- data_sum %>%
+  group_by(Plot, Drought_frequency, Replicate, time_point, functional_group) %>%
+  summarise(func_SCount = sum(SCount_modules, na.rm = T))
+
+#Make wide format
+data_sum_func <- spread(data_sum_func, functional_group, func_SCount)
+
+#Delete time point 2
+data_sum_func <- data_sum_func[which(!data_sum_func$time_point == "2"),]
+
+#Also for data sum overall
+data_sum_overall <- data_sum_overall[which(!data_sum_overall$time_point == "2"),]
+
+#Merge to total counts and save
+head(data_sum_overall)
+head(data_sum_func)
+data_module_totcounts <- merge(data_sum_overall, data_sum_func, by = c("Plot", "Drought_frequency", "Replicate", "time_point"), all = T)
+#save(data_module_totcounts, file = "data_module_totcounts.RDa")
+
+#Calculate plant species number, shannon diveristy and evenness
+#To matrix format
+head(data_sum)
+
+#Delete time point 2 as it only had forbs
+data_sum_sub <- data_sum[which(!data_sum$time_point == "2"),]
+
+#Delete unknown grass and forb
+data_sum_sub <- data_sum_sub[which(!data_sum_sub$abbr %in% c("unk_for", "unk_gra")),]
+
+#Add code for abbr_time_point column
+data_for_evenness <- data_sum_sub %>%
+  pivot_wider(id_cols = c(Plot, Drought_frequency, Replicate, time_point), names_from = abbr, values_from = SCount_modules)
+
+#View(data_for_evenness)
+#View(data_sum_sub)
+#NA's seem to overlap with species that are not present in the plots
+data_for_evenness[is.na(data_for_evenness)] <- 0
+colnames(data_for_evenness)
+matrix_evenness <- as.matrix(data_for_evenness[c(5:46)])
+
+#Calculations
+evenness <- vegan::diversity(matrix_evenness, index = "shannon")/log(specnumber(matrix_evenness))
+shannon <- vegan::diversity(matrix_evenness, index = "shannon")
+spec_number <- vegan::specnumber(matrix_evenness)
+data_evenness <- cbind(data_for_evenness[1:4], evenness, shannon, spec_number)
+colnames(data_evenness)[5:7] <- c("evenness", "Shannon", "species_number")
+
+#Merge
+data_sum_overall <- merge(data_sum_overall, data_evenness, by = c("Plot", "Drought_frequency", "Replicate", "time_point"))
+
+#Add block
+data_sum_overall$block <- as.factor(data_sum_overall$Rep)
+
+#Add position
+data_sum_overall$position <- as.numeric(plyr::revalue(data_sum_overall$Plot, c("MC1" = "4", "MC2" = "5", "MC3" = "6", "MC4" = "2",
+                                                                       "MD1" = "3", "MD2" = "8", "MD3" = "8", "MD4" = "1",
+                                                                       "MR1" = "2", "MR2" = "6", "MR3" = "5", "MR4" = "1",
+                                                                       "R1W" = "3", "R1E" = "4", "R2N" = "7", "R2S" = "7")))
+
+
+#Total number of leaves over time
+plotA <- ggplot(data=data_sum_overall, aes(x=date, y=tot_SCount_modules, colour = Drought_frequency)) +
+  #geom_point(size=2, aes(colour=Drought_frequency, alpha = 0.2)) +
+  geom_vline(xintercept = ymd("2020-08-07"), linetype = "dashed") +
+  geom_vline(xintercept = ymd("2020-06-17"), linetype = "dashed") +
+  #geom_line(alpha = 0.1, aes(group = Plot), size = 1) +
+  stat_summary(geom="ribbon", fun.data=mean_cl_normal, 
+               fun.args=list(conf.int=0.95), fill="grey50", colour = NA, alpha = 0.1, aes(group = Drought_frequency))+
+  stat_summary(geom="line", fun=mean, size = 2, aes(group = Drought_frequency))+
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Total number of modules")+
+  xlab("Date")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())
+plotA
+
+#Number of plant species
+plotB <- ggplot(data=data_sum_overall, aes(x=date, y=species_number, colour = Drought_frequency)) +
+  #geom_point(size=2, aes(colour=Drought_frequency, alpha = 0.2)) +
+  geom_vline(xintercept = ymd("2020-08-07"), linetype = "dashed") +
+  geom_vline(xintercept = ymd("2020-06-17"), linetype = "dashed") +
+  #geom_line(alpha = 0.2, aes(group = Plot), size = 1) +
+  stat_summary(geom="ribbon", fun.data=mean_cl_normal, 
+               fun.args=list(conf.int=0.95), fill = "grey50", colour = NA, alpha = 0.1, aes(group = Drought_frequency))+
+  stat_summary(geom="line", fun=mean, size = 2, aes(group = Drought_frequency))+
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Plant species richness")+
+  xlab("Date")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())
+plotB
+
+#Shannon
+plotC <- ggplot(data=data_sum_overall, aes(x=date, y=Shannon, colour = Drought_frequency)) +
+  #geom_point(size=2, aes(colour=Drought_frequency, alpha = 0.2)) +
+  geom_vline(xintercept = ymd("2020-08-07"), linetype = "dashed") +
+  geom_vline(xintercept = ymd("2020-06-17"), linetype = "dashed") +
+  #geom_line(alpha = 0.1, aes(group = Plot), size = 1) +
+  stat_summary(geom="ribbon", fun.data=mean_cl_normal, 
+               fun.args=list(conf.int=0.95), fill="grey50", colour = NA, alpha = 0.1, aes(group = Drought_frequency))+
+  stat_summary(geom="line", fun=mean, size = 2, aes(group = Drought_frequency))+
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Plant community diversity")+
+  xlab("Date")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())
+plotC
+
+#Evenness
+plotD <- ggplot(data=data_sum_overall, aes(x=date, y=evenness, colour = Drought_frequency)) +
+  #geom_point(size=2, aes(colour=Drought_frequency, alpha = 0.2)) +
+  geom_vline(xintercept = ymd("2020-08-07"), linetype = "dashed") +
+  geom_vline(xintercept = ymd("2020-06-17"), linetype = "dashed") +
+  #geom_line(alpha = 0.2, aes(group = Plot), size = 1) +
+  stat_summary(geom="ribbon", fun.data=mean_cl_normal, 
+               fun.args=list(conf.int=0.95), colour = NA, fill = "grey50", alpha = 0.1, aes(group = Drought_frequency))+
+  stat_summary(geom="line", fun=mean, size = 2, aes(group = Drought_frequency))+
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Plant community evenness")+
+  xlab("Date")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())
+plotD
+
+#Save plots
+library(cowplot)
+prow1 <- plot_grid(plotA + theme(legend.position="none"), plotB + theme(legend.position="none"), 
+                   plotC + theme(legend.position="none"), plotD + theme(legend.position="none"), 
+                   nrow = 2, labels = c("A", "B", "C", "D"))
+legend <- get_legend(plotA + theme(legend.box.margin = margin(0, 0, 0, 12)))
+prow <- plot_grid(prow1, legend, ncol = 2, rel_widths = c(2,.4))
+prow
+save_plot("D:/Innsbruck/Drought legacies/Figs/FigS_overall_patterns_time.svg", prow,
+          ncol = 2, nrow = 2, base_aspect_ratio = 1.5, dpi=600)
+
+
+#####B-2 Stats to overall leaf count plots####
+head(data_sum_overall)
+str(data_sum_overall)
+data_sum_overall$Plot <- factor(data_sum_overall$Plot)
+
+#Total number of modules over time
+m1 <- lmer(tot_SCount_modules ~ Drought_frequency * scale(date) + (1|block/Plot), data=data_sum_overall)
+Anova(m1, type = 3)
+qqnorm(resid(m1))
+plot(m1)
+
+#Number of plant species
+m1 <- lmer(species_number ~ Drought_frequency * scale(date) + (1|block/Plot), data=data_sum_overall)
+Anova(m1, type = 3)
+qqnorm(resid(m1))
+plot(m1)
+
+#Shannon diversity
+m1 <- lmer(Shannon ~ Drought_frequency * scale(date) + (1|block/Plot), data=data_sum_overall)
+Anova(m1, type = 3)
+qqnorm(resid(m1))
+plot(m1)
+
+#Evenness
+m1 <- lmer(evenness ~ Drought_frequency * scale(date) + (1|block/Plot), data=data_sum_overall)
+Anova(m1, type = 3)
+qqnorm(resid(m1))
+plot(m1)
