@@ -417,3 +417,49 @@ summary(m1)
 m1 <- glmer(Synchrony_Loreau ~ avg_sp_number + (1|Canopy_mean_beforeshelter), data=Comm_stability, family = Gamma(link = "log"))
 Anova(m1, type = 3)
 summary(m1)
+
+
+#####C-3 Species loss over time#####
+library(codyn)
+
+#Disappearance
+species_loss <- turnover(data_sum_sub,  
+                         time.var = "time_point", 
+                         species.var = "abbr",
+                         abundance.var = "SCount_modules", 
+                         replicate.var="Plot",
+                         metric = "disappearance")
+species_loss
+
+#Rename
+colnames(species_loss) <- c("Species_loss", "time_point", "Plot")
+
+#Add coding
+head(data_sum_sub)
+Comm_turnover <- merge(species_loss, unique(data_sum_sub[,c(2,3,4,5,9,10)]), by = c("Plot", "time_point"))
+
+#Add date to time_point
+Comm_turnover$date <- ymd(plyr::revalue(as.factor(Comm_turnover$time_point), c("1"="2020-05-22", "3"="2020-06-23",
+                               "4"="2020-07-16", "5"="2020-07-29", "6"="2020-08-12", "7"="2020-08-25",
+                               "8"="2020-09-09", "9"="2020-09-24", "10"="2020-10-22")))
+#Species loss
+head(Comm_turnover)
+plot <- ggplot(data=Comm_turnover, aes(x=date, y=Species_loss, colour = Drought_frequency)) +
+  #geom_point(size=2, aes(colour=Drought_frequency, alpha = 0.2)) +
+  geom_vline(xintercept = ymd("2020-08-07"), linetype = "dashed") +
+  geom_vline(xintercept = ymd("2020-06-17"), linetype = "dashed") +
+  #geom_line(alpha = 0.2, aes(group = Plot), size = 1) +
+  stat_summary(geom="ribbon", fun.data=mean_cl_normal, 
+               fun.args=list(conf.int=0.95), colour = NA, fill = "grey50", alpha = 0.1, aes(group = Drought_frequency))+
+  stat_summary(geom="line", fun=mean, size = 2, aes(group = Drought_frequency))+
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Plant species loss (%)")+
+  xlab("Date")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())
+plot
