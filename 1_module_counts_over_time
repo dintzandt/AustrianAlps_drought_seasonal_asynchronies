@@ -300,3 +300,120 @@ m1 <- lmer(evenness ~ Drought_frequency * scale(date) + (1|block/Plot), data=dat
 Anova(m1, type = 3)
 qqnorm(resid(m1))
 plot(m1)
+
+#####C-1 stability#####
+#Calculate temporal stability using the codyn package
+library(codyn)
+
+#Community stability as the temporal mean divided by the temporal standard deviation (Tilman 1999)
+head(data_sum_sub)
+data_sum_sub$time_point <- as.numeric(data_sum_sub$time_point)
+data_sum_sub$tSCount <- sqrt(data_sum_sub$SCount_modules)
+
+#Synchrony
+synchrony_Loreau <- synchrony(data_sum_sub, 
+                              time.var = "time_point", 
+                              species.var = "abbr", 
+                              abundance.var = "SCount_modules", 
+                              replicate.var = "Plot")
+
+#Rename
+colnames(synchrony_Loreau) <- c("Plot", "Synchrony_Loreau")
+
+#Add coding
+head(data_sum_overall)
+Comm_stability <- merge(synchrony_Loreau, unique(data_sum_overall[,c(1,2,12,13)]), by = c("Plot"))
+
+#Add drought_yrs
+Comm_stability$drought_yrs <- as.numeric(as.character(plyr::revalue(Comm_stability$Drought_frequency, c("0 years" = "0", "1 year" = "1", 
+                                                                                       "3 years" = "3", "13 years" = "13"))))
+
+#Calculate average plant species richness
+head(data_sum_overall)
+data_avg_species_number <- data_sum_overall %>%
+  group_by(Plot) %>%
+  summarise(avg_sp_number = mean(species_number, na.rm = T),
+            avg_evenness = mean(evenness, na.rm=T),
+            avg_Shannon = mean(Shannon, na.rm=T))
+
+#Merge to stability
+Comm_stability <- merge(Comm_stability, data_avg_species_number, by = c("Plot"), all = T)
+#save(Comm_stability, file = "Comm_stability.RDa")
+
+#Plot
+plotA <- ggplot(data=Comm_stability, aes(x=drought_yrs, y=Synchrony_Loreau)) +
+  geom_point(size=3, aes(colour=Drought_frequency, alpha = 0.9)) +
+  geom_smooth(method = "lm", aes(group = "Time_point"), colour = "black", formula= (y ~ I(log(x+1)))) +
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Seasonal synchrony")+
+  xlab("Drought frequency (years)")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  scale_x_continuous(breaks=c(0, 1, 3, 13)) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  coord_cartesian(ylim = c(0.3, 0.8))
+plotA
+
+#Correlate to plant species richness
+plotB <- ggplot(data=Comm_stability, aes(x=avg_sp_number, y=Synchrony_Loreau)) +
+  geom_point(size=3, aes(colour=Drought_frequency, alpha = 0.9)) +
+  geom_smooth(method = "glm", aes(group = "Time_point"), colour = "black", method.args = list(family = Gamma(link = "log"))) +
+  scale_colour_manual(values = my_colours(4), name="Drought frequency")+
+  scale_fill_manual(values = my_colours(4), name="Drought frequency")+
+  ylab("Seasonal synchrony")+
+  xlab("Average plant species richness")+
+  theme_bw() +
+  guides(alpha = FALSE) +
+  theme(axis.text=element_text(size=12), axis.title=element_text(size=14))+
+  theme(legend.title = element_text(size=14), legend.text = element_text(size=12)) +
+  theme(panel.grid.minor = element_blank())+
+  theme(panel.grid.major = element_blank())+
+  coord_cartesian(ylim = c(0.3, 0.8))
+plotB
+
+#Save plots
+library(cowplot)
+prow1 <- plot_grid(plotA + theme(legend.position="none"), plotB + theme(legend.position="none"),
+                   nrow = 1, labels = c("A", "B"), align = "hv")
+legend <- get_legend(plotA + theme(legend.box.margin = margin(0, 0, 0, 12)))
+prow <- plot_grid(prow1, legend, ncol = 2, rel_widths = c(2,.4))
+
+#save_plot("D:/Innsbruck/Drought legacies/Figs/Fig_2_seasonal_synchrony.png", prow, bg = "white",
+#          ncol = 3, nrow = 1, base_aspect_ratio = 1, dpi=600)
+
+
+#####C-2 Statistics####
+head(Comm_stability)
+str(Comm_stability)
+Comm_stability$Plot <- factor(Comm_stability$Plot)
+
+#Add Canopy height
+data_canopy <- read.table("Canopy_height_Necromass.txt", sep="\t",header=T)
+data_canopy$Plot[data_canopy$Plot == " MC4"] <- "MC4"
+
+#Check data
+head(data_canopy)
+data_canopy$Plot <- factor(data_canopy$Plot)
+data_canopy$Treatment <- factor(data_canopy$Treatment, levels = c("control", "1yr_drought", "3yrs_drought", "13yrs_drought"))
+data_canopy$Date <- dmy(data_canopy$Date)
+
+#Extract height before shelter set up
+data_sub_beforeshelter <- data_canopy[which(data_canopy$Date == "2020-06-12"),] #shelter set up was 17-06-2020
+colnames(data_sub_beforeshelter)[c(4,6)] <- c("Canopy_mean_beforeshelter", "Necromass_beforeshelter")
+
+#Merge
+Comm_stability <- merge(Comm_stability, data_sub_beforeshelter[,c(1,4,6)], by = c("Plot"), all = T)
+
+#Synchrony and drought frequency
+m1 <- glmer(Synchrony_Loreau ~ drought_yrs + (1|Canopy_mean_beforeshelter), data=Comm_stability, family = Gamma(link = "log"))
+Anova(m1, type = 3)
+summary(m1)
+
+#Synchrony and species number
+m1 <- glmer(Synchrony_Loreau ~ avg_sp_number + (1|Canopy_mean_beforeshelter), data=Comm_stability, family = Gamma(link = "log"))
+Anova(m1, type = 3)
+summary(m1)
