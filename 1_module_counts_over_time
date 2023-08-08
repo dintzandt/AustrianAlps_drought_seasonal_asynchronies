@@ -463,3 +463,99 @@ plot <- ggplot(data=Comm_turnover, aes(x=date, y=Species_loss, colour = Drought_
   theme(panel.grid.minor = element_blank())+
   theme(panel.grid.major = element_blank())
 plot
+
+
+#####D-1 NMDS#####
+library(vegan)
+
+#Give each plot and time point a unique code
+data_sum_sub$community <- paste(data_sum_sub$Treatment, data_sum_sub$Replicate, data_sum_sub$time_point, sep = ".")
+
+#Make community matrix
+#Plot x time point should become the rows, abbr the columns
+head(data_sum_sub)
+#View(data_sum)
+sub <- data_sum_sub[,c(14, 8, 1)] #select community code, SCount and species abbreviations 
+#sub <- sub[which(!sub$abbr == "unk_"),] #delete unknown species
+sub$community <- as.factor(sub$community)
+sub$abbr <- as.factor(sub$abbr)
+sub2 <- spread(sub, abbr, SCount_modules)
+
+head(sub2) #NA's might be problem for NMDS, these come from counting time point 2 where grasses were not counted, only forbs
+sub3 <- sub2[complete.cases(sub2),] #Remove NA's, they are indeed a problem 
+temp <- data.matrix(sub3)
+community_matrix <- temp[,-1]
+temp2 <- as.matrix(sub3)
+rownames(community_matrix) <- temp2[,1]
+example_NMDS=metaMDS(community_matrix, k=3, trymax=200) #Solution reached after run 20 with stress 0.172
+stressplot(example_NMDS)
+plot(example_NMDS)
+ordiplot(example_NMDS,type="n")
+orditorp(example_NMDS,display="species",col="red",air=0.01) #Shows the input species, the columns
+#NMDS1 separates mostly on what appears to be relatively common species (right side) vs uncommon species (left side)
+#NMDS2 separates mostly on Viccia species+Ranunculus (top) and Taraxacum+Crocus+Dactylis+etc (bottom)
+orditorp(example_NMDS,display="sites",cex=0.7,air=0.01)
+#Mmm not bad, drought plots on the right, control plots on the left
+#Worth to explore further
+
+#Per treatment and time point
+community_code=rownames(community_matrix)
+treatment=str_split_fixed(community_code, "[.]", 3)[,1]
+rep=str_split_fixed(community_code, "[.]", 3)[,2]
+tp=str_split_fixed(community_code, "[.]", 3)[,3]
+treatment_rep=paste(treatment, rep, sep=".")
+treatment_tp=paste(treatment, tp, sep=".")
+
+#Per treatment
+ordiplot(example_NMDS,type="n")
+ordihull(example_NMDS,groups=treatment,draw="polygon",col="grey90",label=T)
+points (example_NMDS, col = factor(treatment))
+#Control and drought 13 most distinct, 1 and 3 yrs in between, likely very much overlapping
+
+#Go to ggplot
+dfspecies <- data.frame(example_NMDS$species)
+dfspecies$abbr <- rownames(dfspecies)
+#save(dfspecies, file="dfspecies_k3.Rda")
+
+dfscores <- data.frame(scores(example_NMDS))
+str(dfscores)
+head(dfscores)
+dfscores$fullcode <- rownames(dfscores)
+dfscores$treatment=str_split_fixed(dfscores$fullcode, "[.]", 3)[,1]
+dfscores$rep=str_split_fixed(dfscores$fullcode, "[.]", 3)[,2]
+dfscores$tp=str_split_fixed(dfscores$fullcode, "[.]", 3)[,3]
+dfscores$treatment_rep=paste(dfscores$treatment, dfscores$rep, sep=".")
+dfscores$treatment_tp=paste(dfscores$treatment, dfscores$tp, sep=".")
+head(dfscores)
+str(dfscores)
+library(lubridate)
+dfscores$date <- ymd(plyr::revalue(dfscores$tp, 
+                             c("1"="2020-05-22", "3"="2020-06-23",
+                               "4"="2020-07-16", "5"="2020-07-29", "6"="2020-08-12", "7"="2020-08-25",
+                               "8"="2020-09-09", "9"="2020-09-24", "10"="2020-10-22")))
+dfscores$fullcode <- as.factor(dfscores$fullcode)
+dfscores$treatment <- as.factor(dfscores$treatment)
+dfscores$treatment_rep <- as.factor(dfscores$treatment_rep)
+dfscores$treatment_tp <- as.factor(dfscores$treatment_tp)
+dfscores$tp <- as.numeric(dfscores$tp)
+head(dfscores)
+str(dfscores)
+
+#Plot
+head(dfscores)
+dfscores <- dfscores[order(dfscores$tp),]
+
+#Add pre and post-cut label
+dfscores$cut <- dfscores$tp
+dfscores$cut <- plyr::revalue(as.factor(dfscores$cut), c("1" = "Drought", "3" = "Drought", "4" = "Drought", "5" = "Drought", 
+                                                   "6" = "Recovery", "7" = "Recovery", "8" = "Recovery", "9" = "Recovery", "10" = "Recovery"))
+
+#Add drought frequency
+dfscores$Drought_frequency <- plyr::revalue(dfscores$treatment, c("control"="0 years", "drought_1yr"="1 year", 
+                                                                  "drought_3yr"="3 years", "drought_13yr"="13 years"))
+dfscores$Drought_frequency <- factor(dfscores$Drought_frequency, levels = c("0 years", "1 year", "3 years", "13 years"))
+
+#Save used data
+#save(dfscores, file="dfscores_k3.Rda")
+#save(data_sum_overall, file = "data_sum_overall_modules_2.Rda")
+#save(Comm_turnover, file = "Comm_turnover_3.Rda")
