@@ -1,0 +1,237 @@
+rm(list=ls())
+getwd()
+setwd("D:/Innsbruck/Drought legacies/R")
+
+#Load packages
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(reshape2)
+#library(plyr)
+library(lubridate)
+library(vegan)
+library(tidyverse)
+
+#Read data
+load("LeafCount_data_processed.Rda")
+
+#Check data
+head(data_sum)
+str(data_sum)
+
+#Remove NA's
+data_sum <- data_sum[complete.cases(data_sum),]
+
+#Order treatments
+data_sum$Treatment <- factor(data_sum$Treatment, levels = c("control", "drought_1yr", "drought_3yr", "drought_13yr"))
+data_sum$Drought_frequency <- plyr::revalue(data_sum$Treatment, c("control"="0 years", "drought_1yr"="1 year", 
+                                                                  "drought_3yr"="3 years", "drought_13yr"="13 years"))
+data_sum$Drought_frequency <- factor(data_sum$Drought_frequency, levels = c("0 years", "1 year", "3 years", "13 years"))
+
+#Add continious drought frequency variable
+data_sum$drought_yrs <- as.numeric(as.character(plyr::revalue(data_sum$Treatment, c("control" = "0", "drought_1yr" = "1", 
+                                                                                    "drought_3yr" = "3", "drought_13yr" = "13"))))
+
+#Save coding
+head(data_sum)
+coding <- unique(data_sum[,c(1:2,9,12,13:15)])
+#save(coding, file = "coding.RDa")
+
+#####A Check patterns per plant species of all treatments####
+#Plot plant species counts over time, coloured by treatment
+pdf(file="Species_SCount_pertreatment.pdf", width = 16 , height = 10)
+par(mfrow=c(2,2))
+
+for (i in levels(as.factor(data_sum$Species))) {
+  sub <- data_sum[which(data_sum$Species == i),]  
+  
+  plot <- ggplot(data=sub, aes(x=Date_real, y=SCount, colour=Treatment, group = Plot))+
+    facet_wrap(~ Treatment, scale = "free") +
+    #annotate("rect", xmin = ymd("2020-06-17"), xmax = ymd("2020-08-07"), ymin = 0, ymax = 10, alpha = .3) +
+    geom_vline(xintercept = ymd("2020-08-07")) +
+    geom_vline(xintercept = ymd("2020-06-17")) +
+    #geom_smooth(aes(group = Treatment)) +
+    geom_line(size=1) +
+    #geom_point(size=2) +
+    scale_colour_manual(values=c("#009E73","#E69F00",  "#0072B2", "#D55E00", "#999999", "#56B4E9", "#CC79A7", "black"), name="Soil")+
+    scale_fill_manual(values=c("#E69F00", "#009E73", "#0072B2", "#D55E00", "#999999", "#56B4E9", "#CC79A7"), name="Soil")+
+    ggtitle(i) +
+    theme_bw() +
+    theme(axis.title.y=element_text(size=11, colour = "black", margin=(margin(0,10,0,0))))+
+    theme(axis.title.x=element_blank())+
+    theme(axis.text=element_text(size=10))+
+    theme(panel.grid.minor = element_blank())+
+    theme(panel.grid.major = element_blank())+
+    theme(strip.text.x=element_text(size=10), strip.background=element_rect(fill="grey"))
+  
+  print(plot)
+}
+dev.off()
+
+########B Check patterns of plant species in control treatment only#####
+#Plot plant species counts over time, coloured by treatment
+data_sum_0 <- data_sum[which(data_sum$Treatment == "control"),]
+head(data_sum_0)
+
+pdf(file="Species_SCount_0yrs.pdf", width = 16 , height = 10)
+par(mfrow=c(2,2))
+
+for (i in levels(as.factor(data_sum_0$Species))) {
+  sub <- data_sum_0[which(data_sum_0$Species == i),]  
+  
+  plot <- ggplot(data=sub, aes(x=Date_real, y=SCount, colour=as.factor(Replicate), group = Plot))+
+    facet_wrap(~ as.factor(Replicate)) +
+    #annotate("rect", xmin = ymd("2020-06-17"), xmax = ymd("2020-08-07"), ymin = 0, ymax = 10, alpha = .3) +
+    geom_vline(xintercept = ymd("2020-08-07")) +
+    #geom_vline(xintercept = ymd("2020-06-17")) +
+    #geom_smooth(aes(group = Treatment)) +
+    geom_line(size=1) +
+    #geom_point(size=2) +
+    scale_colour_manual(values=c("#009E73","#E69F00",  "#0072B2", "#D55E00", "#999999", "#56B4E9", "#CC79A7", "black"), name="Soil")+
+    scale_fill_manual(values=c("#E69F00", "#009E73", "#0072B2", "#D55E00", "#999999", "#56B4E9", "#CC79A7"), name="Soil")+
+    ggtitle(i) +
+    theme_bw() +
+    theme(axis.title.y=element_text(size=11, colour = "black", margin=(margin(0,10,0,0))))+
+    theme(axis.title.x=element_blank())+
+    theme(axis.text=element_text(size=10))+
+    theme(panel.grid.minor = element_blank())+
+    theme(panel.grid.major = element_blank())+
+    theme(strip.text.x=element_text(size=10), strip.background=element_rect(fill="grey"))
+  
+  print(plot)
+}
+dev.off()
+plot
+
+#####C Calculate ratio first cut vs second cut for each plant species in control plots#####
+#Load biomass data
+data_pd <- read.table("Peak_drought_ANPP_data_2020.txt", sep="\t",header=T)
+data_re <- read.table("Recovery_ANPP_data_2020.txt", sep="\t",header=T)[,-c(11:13)]
+
+#Check data
+head(data_pd)
+head(data_re)
+data_pd$Species <- factor(data_pd$Species)
+data_re$Species <- factor(data_re$Species)
+levels(data_pd$Species)
+data_pd$Species <- plyr::revalue(data_pd$Species, c("Hairy Carex" = "Arrhenatherum elatius"))
+levels(data_re$Species)
+data_re$Species <- plyr::revalue(data_re$Species, c("Hairy Carex" = "Arrhenatherum elatius", "Festuca rubra Phenotyp_2" = "Festuca rubra"))
+
+#a is missing in two cases
+data_re$Alive_dead[data_re$Species == "Acinos alpinus" & data_re$Plot == "MC1"] <- "a"
+
+#Bind
+data <- rbind(data_pd, data_re)
+
+#Add species abbreviations and species with dead/alive columns
+data$abbr <- paste(str_sub(str_split_fixed(data$Species, n=2, " ")[,1], 1, 3),
+                   str_sub(str_split_fixed(data$Species, n=2, " ")[,2], 1, 3) , sep="_")
+
+head(data)
+
+#Extract leaf and flower data
+levels(as.factor(data$Organ))
+data_leaf <- data[which(data$Organ %in% c("leaf", "leaf ")),]
+data_flower <- data[which(data$Organ %in% c("flower", "flower stem", "stem", "seeds")),]
+data_necromass <- data[which(data$Alive_dead == "d"),]
+
+#sum dead and alive biomass
+#calculate ratio
+head(data_leaf)
+
+data_total_ratio <- data %>%
+  filter(!Species %in% c("Unknown herb", "Unknown grass", "Unknown", "Unknown grasses")) %>%
+  dplyr::group_by(Plot, Treatment, Rep, Time_point, Species, abbr) %>%
+  dplyr::summarise(leaf_bio = sum(Weight, na.rm = T)) %>%
+  pivot_wider(id_cols = c(Plot, Treatment, Rep, Species, abbr), names_from = Time_point, values_from = leaf_bio) %>%
+  mutate(peak_drought_replace = replace_na(peak_drought, 0.001), recovery_replace = replace_na(recovery, 0.001)) %>%
+  mutate(pk_re_ratio_total = peak_drought_replace/recovery_replace)
+
+data_total_ratio
+
+data_leaf_ratio <- data_leaf %>%
+  filter(!Species %in% c("Unknown herb", "Unknown grass", "Unknown", "Unknown grasses")) %>%
+  dplyr::group_by(Plot, Treatment, Rep, Time_point, Species, abbr) %>%
+  dplyr::summarise(leaf_bio = sum(Weight, na.rm = T)) %>%
+  pivot_wider(id_cols = c(Plot, Treatment, Rep, Species, abbr), names_from = Time_point, values_from = leaf_bio) %>%
+  mutate(peak_drought_replace = replace_na(peak_drought, 0.001), recovery_replace = replace_na(recovery, 0.001)) %>%
+  mutate(pk_re_ratio_leaf = peak_drought_replace/recovery_replace)
+
+data_leaf_ratio
+
+data_flower_ratio <- data_flower %>%
+  filter(!Species %in% c("Unknown herb", "Unknown grass", "Unknown")) %>%
+  dplyr::group_by(Plot, Treatment, Rep, Time_point, Species, abbr) %>%
+  dplyr::summarise(flower_bio = sum(Weight, na.rm = T)) %>%
+  pivot_wider(id_cols = c(Plot, Treatment, Rep, Species, abbr), names_from = Time_point, values_from = flower_bio) %>%
+  mutate(peak_drought_replace = replace_na(peak_drought, 0.001), recovery_replace = replace_na(recovery, 0.001)) %>%
+  mutate(pk_re_ratio_flower = peak_drought_replace/recovery_replace)
+
+data_flower_ratio
+
+data_necromass_ratio <- data_necromass %>%
+  filter(!Species %in% c("Unknown herb", "Unknown grass", "Unknown")) %>%
+  dplyr::group_by(Plot, Treatment, Rep, Time_point, Species, abbr) %>%
+  dplyr::summarise(necromass_bio = sum(Weight, na.rm = T)) %>%
+  pivot_wider(id_cols = c(Plot, Treatment, Rep, Species, abbr), names_from = Time_point, values_from = necromass_bio) %>%
+  mutate(peak_drought_replace = replace_na(peak_drought, 0.001), recovery_replace = replace_na(recovery, 0.001)) %>%
+  mutate(pk_re_ratio_necromass = peak_drought_replace/recovery_replace)
+
+data_necromass_ratio
+
+#Merge
+temp <- merge(data_leaf_ratio[,c(1:5, 10)], data_flower_ratio[,c(1:5, 10)], by = c("Plot", "Treatment", "Rep", "Species", "abbr"), all = T)
+temp2 <- merge(temp, data_necromass_ratio[,c(1:5, 10)], by = c("Plot", "Treatment", "Rep", "Species", "abbr"), all = T)
+data_early_late_ratio <- merge(temp2, data_total_ratio[,c(1:5, 10)], by = c("Plot", "Treatment", "Rep", "Species", "abbr"), all = T)
+
+#Average per plant species for the four 0 yrs drought plots
+leaf_early_late_0yrs <- data_leaf_ratio %>%
+  filter(Treatment == "control") %>%
+  dplyr::group_by(Treatment, Species, abbr) %>%
+  dplyr::summarise(avg_pk_re_ratio_leaf = mean(pk_re_ratio_leaf, na.rm = T))
+
+leaf_early_late_0yrs
+
+flower_early_late_0yrs <- data_flower_ratio %>%
+  filter(Treatment == "control") %>%
+  dplyr::group_by(Treatment, Species, abbr) %>%
+  dplyr::summarise(avg_pk_re_ratio_flower = mean(pk_re_ratio_flower, na.rm = T))
+
+flower_early_late_0yrs
+
+necromass_early_late_0yrs <- data_necromass_ratio %>%
+  filter(Treatment == "control") %>%
+  dplyr::group_by(Treatment, Species, abbr) %>%
+  dplyr::summarise(avg_pk_re_ratio_necromass = mean(pk_re_ratio_necromass, na.rm = T))
+
+necromass_early_late_0yrs
+
+total_early_late_0yrs <- data_total_ratio %>%
+  filter(Treatment == "control") %>%
+  dplyr::group_by(Treatment, Species, abbr) %>%
+  dplyr::summarise(avg_pk_re_ratio_total = mean(pk_re_ratio_total, na.rm = T))
+
+total_early_late_0yrs
+
+#Merge
+temp <- merge(leaf_early_late_0yrs, flower_early_late_0yrs, by = c("Treatment", "Species", "abbr"), all = T)
+temp2 <- merge(temp, necromass_early_late_0yrs, by = c("Treatment", "Species", "abbr"), all = T)
+data_early_late_ratio_0yrs <- merge(temp2, total_early_late_0yrs, by = c("Treatment", "Species", "abbr"), all = T)
+
+#Name species properly
+levels(data_early_late_ratio$Species)
+data_early_late_ratio$Species <- plyr::revalue(data_early_late_ratio$Species, c("Crocus" = "Crocus albiflorus", "Deschampsia" = "Deschampsia cespitosa",
+                                                                                "Galium" = "Galium pumilum", "Phytheuma orbiculare" = "Phyteum sp",
+                                                                                "Rhinanthus" = "Rhinanthus glacialis", "Vicia cracca" = "Vicia sp"))
+data_early_late_ratio_0yrs$Species <- plyr::revalue(data_early_late_ratio_0yrs$Species, c("Crocus" = "Crocus albiflorus", "Deschampsia" = "Deschampsia cespitosa",
+                                                                                "Galium" = "Galium pumilum", "Phytheuma orbiculare" = "Phyteum sp",
+                                                                                "Rhinanthus" = "Rhinanthus glacialis", "Vicia cracca" = "Vicia sp"))
+levels(as.factor(data_early_late_ratio$abbr))
+data_early_late_ratio$abbr <- plyr::revalue(data_early_late_ratio$abbr, c("Cro_" = "Cro_alb", "Des_" = "Des_ces", "Gal_" = "Gal_pum", "Phy_orb" = "Phy_sp",
+                                                                                "Rhi_" = "Rhi_gla", "Vic_cra" = "Vic_sp"))
+data_early_late_ratio_0yrs$abbr <- plyr::revalue(data_early_late_ratio_0yrs$abbr, c("Cro_" = "Cro_alb", "Des_" = "Des_ces", "Gal_" = "Gal_pum", "Phy_orb" = "Phy_sp",
+                                                                          "Rhi_" = "Rhi_gla", "Vic_cra" = "Vic_sp"))
+#Save
+#save(data_early_late_ratio, file = "data_early_late_ratio.Rda")
+#save(data_early_late_ratio_0yrs, file = "data_early_late_ratio_0yrs.Rda")
