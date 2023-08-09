@@ -143,10 +143,10 @@ head(data_sum)
 data_sum_sub <- data_sum[which(!data_sum$time_point == "2"),]
 
 #Delete unknown grass and forb
-data_sum_sub <- data_sum_sub[which(!data_sum_sub$abbr %in% c("unk_for", "unk_gra")),]
+data_sum_sub_unk <- data_sum_sub[which(!data_sum_sub$abbr %in% c("unk_for", "unk_gra")),]
 
 #Add code for abbr_time_point column
-data_for_evenness <- data_sum_sub %>%
+data_for_evenness <- data_sum_sub_unk %>%
   pivot_wider(id_cols = c(Plot, Drought_frequency, Replicate, time_point), names_from = abbr, values_from = SCount_modules)
 
 #View(data_for_evenness)
@@ -268,8 +268,8 @@ prow1 <- plot_grid(plotA + theme(legend.position="none"), plotB + theme(legend.p
 legend <- get_legend(plotA + theme(legend.box.margin = margin(0, 0, 0, 12)))
 prow <- plot_grid(prow1, legend, ncol = 2, rel_widths = c(2,.4))
 prow
-save_plot("D:/Innsbruck/Drought legacies/Figs/FigS_overall_patterns_time.svg", prow,
-          ncol = 2, nrow = 2, base_aspect_ratio = 1.5, dpi=600)
+#save_plot("D:/Innsbruck/Drought legacies/Figs/FigS_overall_patterns_time.png", prow,
+#          ncol = 2, nrow = 2, base_aspect_ratio = 1.5, dpi=600, bg = "white")
 
 
 #####B-2 Stats to overall leaf count plots####
@@ -301,17 +301,18 @@ Anova(m1, type = 3)
 qqnorm(resid(m1))
 plot(m1)
 
+
 #####C-1 stability#####
 #Calculate temporal stability using the codyn package
 library(codyn)
 
 #Community stability as the temporal mean divided by the temporal standard deviation (Tilman 1999)
-head(data_sum_sub)
-data_sum_sub$time_point <- as.numeric(data_sum_sub$time_point)
-data_sum_sub$tSCount <- sqrt(data_sum_sub$SCount_modules)
+head(data_sum_sub_unk)
+data_sum_sub_unk$time_point <- as.numeric(data_sum_sub_unk$time_point)
+data_sum_sub_unk$tSCount <- sqrt(data_sum_sub_unk$SCount_modules)
 
 #Synchrony
-synchrony_Loreau <- synchrony(data_sum_sub, 
+synchrony_Loreau <- synchrony(data_sum_sub_unk, 
                               time.var = "time_point", 
                               species.var = "abbr", 
                               abundance.var = "SCount_modules", 
@@ -423,7 +424,7 @@ summary(m1)
 library(codyn)
 
 #Disappearance
-species_loss <- turnover(data_sum_sub,  
+species_loss <- turnover(data_sum_sub_unk,  
                          time.var = "time_point", 
                          species.var = "abbr",
                          abundance.var = "SCount_modules", 
@@ -469,25 +470,25 @@ plot
 library(vegan)
 
 #Give each plot and time point a unique code
-data_sum_sub$community <- paste(data_sum_sub$Treatment, data_sum_sub$Replicate, data_sum_sub$time_point, sep = ".")
+data_sum_sub_unk$community <- paste(data_sum_sub_unk$Treatment, data_sum_sub_unk$Replicate, data_sum_sub_unk$time_point, sep = ".")
 
 #Make community matrix
 #Plot x time point should become the rows, abbr the columns
-head(data_sum_sub)
+head(data_sum_sub_unk)
 #View(data_sum)
-sub <- data_sum_sub[,c(14, 8, 1)] #select community code, SCount and species abbreviations 
+sub <- data_sum_sub_unk[,c(14, 8, 1)] #select community code, SCount_modules and species abbreviations 
 #sub <- sub[which(!sub$abbr == "unk_"),] #delete unknown species
 sub$community <- as.factor(sub$community)
 sub$abbr <- as.factor(sub$abbr)
 sub2 <- spread(sub, abbr, SCount_modules)
 
-head(sub2) #NA's might be problem for NMDS, these come from counting time point 2 where grasses were not counted, only forbs
-sub3 <- sub2[complete.cases(sub2),] #Remove NA's, they are indeed a problem 
-temp <- data.matrix(sub3)
+head(sub2)
+sub2[is.na(sub2)]<-0
+temp <- data.matrix(sub2)
 community_matrix <- temp[,-1]
-temp2 <- as.matrix(sub3)
+temp2 <- as.matrix(sub2)
 rownames(community_matrix) <- temp2[,1]
-example_NMDS=metaMDS(community_matrix, k=3, trymax=200) #Solution reached after run 20 with stress 0.172
+example_NMDS=metaMDS(community_matrix, k=2, trymax=200) #Solution reached after run 20 with stress 0.172
 stressplot(example_NMDS)
 plot(example_NMDS)
 ordiplot(example_NMDS,type="n")
@@ -559,3 +560,13 @@ dfscores$Drought_frequency <- factor(dfscores$Drought_frequency, levels = c("0 y
 #save(dfscores, file="dfscores_k3.Rda")
 #save(data_sum_overall, file = "data_sum_overall_modules_2.Rda")
 #save(Comm_turnover, file = "Comm_turnover_3.Rda")
+
+#Add drought years
+dfscores$drought_yrs <- as.numeric(as.character(plyr::revalue(dfscores$Drought_frequency, c("0 years" = "0", "1 year" = "1", 
+                                                                                                        "3 years" = "3", "13 years" = "13"))))
+
+#PERMANOVA tests
+#Time and drought frequency using restricted permutations
+library("permute")
+h <- how(plots = Plots(strata = dfscores$treatment_rep, type = "none"), nperm = 999)
+vegan::adonis(community_matrix ~ log(dfscores$drought_yrs+1) * scale(dfscores$date), method = "bray", permutations = h)
